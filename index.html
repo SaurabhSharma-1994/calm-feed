@@ -41,14 +41,19 @@ button:disabled{opacity:.6}
 .list{display:flex;flex-direction:column;gap:10px}
 .list .card{display:flex}.list .thumb{flex:0 0 240px;aspect-ratio:16/9}.list .info{padding:10px 16px;display:flex;flex-direction:column;justify-content:center}
 @media(max-width:520px){.list .thumb{flex-basis:140px}}
-.watch{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;margin-top:12px}
+main.wide{max-width:1800px}
+.watch{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,1fr);gap:16px;margin-top:12px}
 @media(max-width:860px){.watch{grid-template-columns:1fr}}
 .pwrap{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
 .pwrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .wt{font-size:18px;margin:12px 0 4px}
-.uplist{position:relative;max-height:72vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.uph{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}.uph .sub{margin:0}.uph button,#upopen{padding:5px 10px;font-size:13px}
+#upopen{display:none;margin-top:6px}
+.watch.noup{grid-template-columns:minmax(0,1fr)}.watch.noup .wr{display:none}.watch.noup #upopen{display:inline-block}
+.uplist{position:relative;max-height:80vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
 .up{display:flex;gap:10px;padding:6px;border-radius:10px;cursor:pointer;border:1px solid transparent}.up:hover{background:var(--card)}.up.cur{background:var(--card);border-color:var(--accent)}
-.up .ut{flex:0 0 130px;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#000}.up img{width:100%;height:100%;object-fit:cover;display:block}.up .t{font-size:14px;margin:0}
+.up .ut{position:relative;flex:0 0 96px;aspect-ratio:16/9;border-radius:6px;overflow:hidden;background:#000}.up img{width:100%;height:100%;object-fit:cover;display:block}.up .t{font-size:12px;line-height:1.3;margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.up .m{font-size:11px}
+.pbar{position:absolute;left:0;right:0;bottom:0;height:4px;background:#ffffff66}.pbar i{display:block;height:100%;background:#f03}
 </style>
 </head>
 <body>
@@ -81,6 +86,7 @@ var SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 var $ = function (id) { return document.getElementById(id); };
 var API = /^https?:$/.test(location.protocol) ? "" : "http://localhost:3000";
 var NOSERVER = "Can't reach the server. In the calm-feed folder run: node server.js, then open http://localhost:3000";
+var UPHIDE = false; try { UPHIDE = localStorage.getItem("calm_uphide") === "1"; } catch (e) {}
 var MODE = "grid"; try { MODE = localStorage.getItem("calm_mode") || "grid"; } catch (e) {}
 var sb = null, USER = null, favs = [], WROWS = [], WSET = {}, CURNAME = "";
 try { sb = supabase.createClient(SB_URL, SB_KEY); } catch (e) {}
@@ -111,7 +117,7 @@ function markWatched(id, title, channel) {
 /* ---------- views ---------- */
 function gridItems(videos) {
   return videos.map(function (v) {
-    return '<div class="card" data-w="' + v.id + '"><div class="thumb"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/hqdefault.jpg" alt=""><div class="play">▶</div>' + (WSET[v.id] ? '<div class="seen">✓ Watched</div>' : '') + '</div>' +
+    return '<div class="card" data-w="' + v.id + '"><div class="thumb"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/hqdefault.jpg" alt=""><div class="play">▶</div>' + (WSET[v.id] ? '<div class="seen">✓ Watched</div>' : '') + pbar(v.id) + '</div>' +
       '<div class="info"><p class="t">' + esc(v.title) + '</p><div class="m">' + (v.published ? ago(v.published) : "") + '</div></div></div>';
   }).join("");
 }
@@ -220,7 +226,29 @@ async function addChannel() {
 
 /* ---------- watch page: big player + up-next list ---------- */
 var QUEUE = [], RET = null, CUR = -1, YTP = null, YTREADY = null, FALLBACK = false;
-function leave() { try { if (YTP && YTP.destroy) YTP.destroy(); } catch (e) {} YTP = null; FALLBACK = false; }
+var PROG = {}, tick = null, lastSave = 0, SW = false;
+function pct(id) { var p = PROG[id]; if (!p || !(p.d > 0) || !(p.s > 0)) return 0; var x = p.s / p.d * 100; return x > 95 ? 100 : Math.max(2, Math.round(x)); }
+function pbar(id) { var x = pct(id); return x ? '<div class="pbar"><i style="width:' + x + '%"></i></div>' : ""; }
+function startAt(id) { var p = PROG[id]; return p && p.d > 0 && p.s / p.d < 0.95 ? Math.floor(p.s) : 0; }
+function saveProg(id) {
+  var p = PROG[id]; if (!p) return; lastSave = Date.now();
+  try { var all = JSON.parse(localStorage.getItem("calm_prog") || "{}"); all[id] = p; var ks = Object.keys(all); if (ks.length > 800) delete all[ks[0]]; localStorage.setItem("calm_prog", JSON.stringify(all)); } catch (e) {}
+  if (sb && USER) sb.from("progress").upsert({ user_id: USER.id, video_id: id, seconds: p.s, duration: p.d, updated_at: new Date().toISOString() }, { onConflict: "user_id,video_id" }).then(function () {}, function () {});
+}
+function sampleProg(force) {
+  var v = QUEUE[CUR]; if (SW || !YTP || !YTP.getCurrentTime || !v) return;
+  var s, d; try { s = YTP.getCurrentTime(); d = YTP.getDuration(); } catch (e) { return; }
+  if (!(d > 0)) return;
+  PROG[v.id] = { s: s, d: d };
+  var box = document.querySelector("#uplist .up.cur .ut");
+  if (box) { var old = box.querySelector(".pbar"); if (old) old.remove(); box.insertAdjacentHTML("beforeend", pbar(v.id)); }
+  if (force || Date.now() - lastSave > 10000) saveProg(v.id);
+}
+function startTick() { stopTick(); tick = setInterval(sampleProg, 1000); }
+function stopTick() { if (tick) clearInterval(tick); tick = null; }
+window.addEventListener("pagehide", function () { sampleProg(true); });
+document.addEventListener("visibilitychange", function () { if (document.hidden) sampleProg(true); });
+function leave() { sampleProg(true); stopTick(); try { if (YTP && YTP.destroy) YTP.destroy(); } catch (e) {} YTP = null; FALLBACK = false; var m = document.querySelector("main"); if (m) m.classList.remove("wide"); }
 function loadYT() {
   if (YTREADY) return YTREADY;
   YTREADY = new Promise(function (res, rej) {
@@ -234,7 +262,7 @@ function paintQ() {
   var cur = QUEUE[CUR] || {};
   $("wt").textContent = cur.title || "";
   $("uplist").innerHTML = QUEUE.map(function (v, i) {
-    return '<div class="up' + (i === CUR ? " cur" : "") + '" data-q="' + i + '"><div class="ut"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg" alt=""></div><div><p class="t">' + esc(v.title) + '</p>' + (WSET[v.id] ? '<div class="m">✓ Watched</div>' : '') + '</div></div>';
+    return '<div class="up' + (i === CUR ? " cur" : "") + '" data-q="' + i + '"><div class="ut"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg" alt="">' + pbar(v.id) + '</div><div><p class="t">' + esc(v.title) + '</p>' + (WSET[v.id] ? '<div class="m">✓ Watched</div>' : '') + '</div></div>';
   }).join("");
   var c = $("uplist").querySelector(".cur"); if (c) $("uplist").scrollTop = Math.max(0, c.offsetTop - 8);
 }
@@ -244,20 +272,29 @@ function mountFrame() {
 function watch(id) {
   var i = QUEUE.findIndex(function (v) { return v.id === id; });
   if (i < 0) { QUEUE = [{ id: id, title: "" }]; i = 0; }
-  leave(); CUR = i;
-  $("view").innerHTML = '<button class="ghost" data-ret="1">← Back</button><div class="watch"><div><div class="pwrap"><div id="ytp"></div></div><h1 class="wt" id="wt"></h1></div>' +
-    '<div><div class="sub">Up next · ' + QUEUE.length + ' video' + (QUEUE.length === 1 ? "" : "s") + '</div><div class="uplist" id="uplist"></div></div></div>';
+  leave(); SW = true; CUR = i; document.querySelector("main").classList.add("wide");
+  $("view").innerHTML = '<button class="ghost" data-ret="1">← Back</button><div class="watch' + (UPHIDE ? " noup" : "") + '"><div><div class="pwrap"><div id="ytp"></div></div><h1 class="wt" id="wt"></h1><button class="ghost" id="upopen" data-up="show">☰ Show up next</button></div>' +
+    '<div class="wr"><div class="uph"><span class="sub">Up next · ' + QUEUE.length + ' video' + (QUEUE.length === 1 ? "" : "s") + '</span><button class="ghost" data-up="hide" title="Close up next">✕ Close</button></div><div class="uplist" id="uplist"></div></div></div>';
   var v = QUEUE[CUR]; markWatched(v.id, v.title, CURNAME); paintQ();
   loadYT().then(function () {
-    YTP = new YT.Player("ytp", { videoId: QUEUE[CUR].id, playerVars: { autoplay: 1, rel: 0, playsinline: 1 },
-      events: { onStateChange: function (e) { if (e.data === 0 && CUR + 1 < QUEUE.length) playIdx(CUR + 1); } } });
+    YTP = new YT.Player("ytp", { videoId: QUEUE[CUR].id, playerVars: { autoplay: 1, rel: 0, playsinline: 1, start: startAt(QUEUE[CUR].id) },
+      events: { onStateChange: function (e) {
+        if (e.data === 1) { SW = false; startTick(); }
+        else if (e.data === 2) { sampleProg(true); stopTick(); }
+        else if (e.data === 0) {
+          stopTick(); var cv = QUEUE[CUR], dd = cv && PROG[cv.id] ? PROG[cv.id].d : 0;
+          if (dd > 0) { PROG[cv.id] = { s: dd, d: dd }; saveProg(cv.id); }
+          if (CUR + 1 < QUEUE.length) playIdx(CUR + 1);
+        }
+      } } });
   }).catch(function () { FALLBACK = true; mountFrame(); });
   window.scrollTo(0, 0);
 }
 function playIdx(i) {
   if (i < 0 || i >= QUEUE.length) return;
+  sampleProg(true); SW = true;
   CUR = i; var v = QUEUE[i]; markWatched(v.id, v.title, CURNAME); paintQ();
-  if (YTP && YTP.loadVideoById) YTP.loadVideoById(v.id); else if (FALLBACK) mountFrame();
+  if (YTP && YTP.loadVideoById) YTP.loadVideoById({ videoId: v.id, startSeconds: startAt(v.id) }); else if (FALLBACK) mountFrame();
 }
 
 /* ---------- accounts ---------- */
@@ -272,6 +309,9 @@ async function loadData() {
   favs = rows.map(function (r) { return { id: r.channel_id, name: r.name, avatar: r.avatar, playlists: r.playlists || [] }; });
   var w = await sb.from("watched").select("video_id,title,channel,watched_at").order("watched_at", { ascending: false }).limit(300);
   WROWS = w.data || []; WSET = {}; WROWS.forEach(function (r) { WSET[r.video_id] = 1; });
+  PROG = {}; try { PROG = JSON.parse(localStorage.getItem("calm_prog") || "{}"); } catch (e) {}
+  var pr = await sb.from("progress").select("video_id,seconds,duration");
+  if (!pr.error) (pr.data || []).forEach(function (r) { PROG[r.video_id] = { s: r.seconds, d: r.duration }; });
 }
 async function boot() {
   if (!sb) { $("auth").classList.remove("hide"); amsg("Couldn't load the sign-in service. Check your internet connection and refresh.", true); return; }
@@ -306,6 +346,12 @@ document.addEventListener("click", function (e) {
   if ((el = t.closest("[data-tab]"))) { channel(el.getAttribute("data-id"), el.getAttribute("data-tab")); return; }
   if ((el = t.closest("[data-pl]"))) { openPlaylist(el.getAttribute("data-cid"), el.getAttribute("data-pl")); return; }
   if ((el = t.closest("[data-mode]"))) { MODE = el.getAttribute("data-mode"); try { localStorage.setItem("calm_mode", MODE); } catch (e) {} if (RET) RET(); return; }
+  if ((el = t.closest("[data-up]"))) {
+    UPHIDE = el.getAttribute("data-up") === "hide"; try { localStorage.setItem("calm_uphide", UPHIDE ? "1" : "0"); } catch (e) {}
+    var wc = document.querySelector(".watch"); if (wc) wc.classList.toggle("noup", UPHIDE);
+    if (!UPHIDE) paintQ();
+    return;
+  }
   if ((el = t.closest("[data-q]"))) { playIdx(+el.getAttribute("data-q")); return; }
   if ((el = t.closest("[data-w]"))) { watch(el.getAttribute("data-w")); return; }
   if ((el = t.closest("[data-ret]"))) { if (RET) RET(); else home(); return; }
