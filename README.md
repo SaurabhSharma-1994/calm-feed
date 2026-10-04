@@ -31,13 +31,13 @@ The idea in one line: **your favorites, in one place, without the distraction.**
 - Tap a channel to open it, with two tabs:
   - **Latest videos:** the newest uploads as thumbnails, playable in the page.
   - **Playlists:** playlist thumbnails to choose from, plus a box to paste a playlist link.
-- Your channel list is saved in your browser.
+- Accounts: your channel list and watch history are saved online.
 
 ### Known limits
 
 - Without an API key, playlists show the first ~100 videos (read from the playlist page). With a free YouTube API key set as `YOUTUBE_API_KEY` on the host, playlists show up to 500 videos reliably. Channel "Latest videos" shows the 15 newest.
 - The automatic playlist list reads YouTube's page layout, which can change. Pasting a playlist link always works as a fallback.
-- Your list is saved per browser. It does not sync between devices yet.
+- Sign in with email and password: your channels, playlists and watch history are saved to your account (Supabase) and follow you to any device. "Watched" means you opened the video here.
 - YouTube may block some hosting servers. If that happens, switching to YouTube's official API (with a free key) is the planned fix.
 
 ## Roadmap

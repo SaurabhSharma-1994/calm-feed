@@ -11,12 +11,15 @@
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:960px;margin:0 auto;padding:16px}
 h1{font-size:22px;margin:8px 0 2px}.sub{color:var(--muted);margin:0 0 14px;font-size:14px}
+.hide{display:none}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 input{flex:1;min-width:180px;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font:inherit}
 button{padding:11px 16px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-t);font:inherit;cursor:pointer}
 button.ghost{background:none;border:1px solid var(--line);color:var(--text)}
 button:disabled{opacity:.6}
-#msg{font-size:14px;min-height:20px;margin:6px 0;color:var(--muted)}#msg.err{color:#d14343}
+#msg,#amsg{font-size:14px;min-height:20px;margin:6px 0;color:var(--muted)}.err{color:#d14343!important}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}.bar .who{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.authbox{max-width:380px;margin:40px auto}.authbox input{width:100%;margin-bottom:8px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .chgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:14px;margin-top:10px}
 .ch{position:relative;text-align:center;padding:16px 8px 12px;background:var(--card);border:1px solid var(--line);border-radius:14px;cursor:pointer}
@@ -27,6 +30,7 @@ button:disabled{opacity:.6}
 .thumb{position:relative;aspect-ratio:16/9;background:#000;cursor:pointer}
 .thumb img,.thumb iframe{width:100%;height:100%;border:0;display:block;object-fit:cover}
 .play{position:absolute;inset:0;display:grid;place-items:center;font-size:40px;color:#fff;text-shadow:0 2px 12px #0008}
+.seen{position:absolute;left:8px;top:8px;background:#000b;color:#fff;font-size:12px;padding:2px 9px;border-radius:99px}
 .info{padding:10px 12px}.t{font-weight:600;margin:0 0 4px;font-size:15px}.m{font-size:13px;color:var(--muted)}
 .tabs{display:flex;gap:6px;margin:14px 0}.tabs button{flex:1;background:var(--card);color:var(--text);border:1px solid var(--line)}.tabs button.on{background:var(--accent);color:var(--accent-t);border-color:var(--accent)}
 .hd{display:flex;align-items:center;gap:12px;margin-top:14px}.hd .av{margin:0;width:56px;height:56px;font-size:20px}.hd h1{margin:0}
@@ -38,30 +42,62 @@ button:disabled{opacity:.6}
 <main>
   <h1>Calm Feed</h1>
   <p class="sub">Only the YouTube channels you chose. No recommendations, no endless scroll.</p>
-  <div class="row"><input id="q" placeholder="Add channel: handle (@mkbhd) or channel link" autocomplete="off"><button id="add">Add</button></div>
-  <div id="msg"></div>
-  <div id="view"></div>
+
+  <div id="auth" class="hide">
+    <div class="authbox">
+      <h1>Sign in</h1>
+      <p class="sub">Your channels and watch history are saved to your account, so they follow you to any device.</p>
+      <input id="email" type="email" placeholder="Email" autocomplete="email">
+      <input id="pass" type="password" placeholder="Password (6+ characters)" autocomplete="current-password">
+      <div class="row"><button id="signin">Sign in</button><button id="signup" class="ghost">Create account</button></div>
+      <div id="amsg"></div>
+    </div>
+  </div>
+
+  <div id="app" class="hide">
+    <div class="bar"><span class="who" id="who"></span><span class="row"><button class="ghost" id="hist">History</button><button class="ghost" id="out">Sign out</button></span></div>
+    <div class="row"><input id="q" placeholder="Add channel: handle (@mkbhd) or channel link" autocomplete="off"><button id="add">Add</button></div>
+    <div id="msg"></div>
+    <div id="view"></div>
+  </div>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+var SB_URL = "https://atavoxosxqvicazhexus.supabase.co";
+var SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0YXZveG9zeHF2aWNhemhleHVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExMDI1ODEsImV4cCI6MjEwNjY3ODU4MX0.9nS-2zYEJ_L8h1mHsvNWbpf-qIoJSxVYaHQquBmhMUU";
 var $ = function (id) { return document.getElementById(id); };
 var API = /^https?:$/.test(location.protocol) ? "" : "http://localhost:3000";
 var NOSERVER = "Can't reach the server. In the calm-feed folder run: node server.js, then open http://localhost:3000";
-var favs = [];
-try { favs = JSON.parse(localStorage.getItem("calm_favs") || "[]"); } catch (e) {}
-function save() { try { localStorage.setItem("calm_favs", JSON.stringify(favs)); } catch (e) {} }
+var sb = null, USER = null, favs = [], WROWS = [], WSET = {}, CURNAME = "";
+try { sb = supabase.createClient(SB_URL, SB_KEY); } catch (e) {}
+
 function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 function ago(d) { if (!d) return ""; var h = Math.floor((Date.now() - new Date(d)) / 36e5); if (h < 1) return "just now"; if (h < 24) return h + "h ago"; var n = Math.floor(h / 24); return n < 30 ? n + "d ago" : Math.floor(n / 30) + "mo ago"; }
 function msg(t, err) { $("msg").textContent = t || ""; $("msg").className = err ? "err" : ""; }
+function amsg(t, err) { $("amsg").textContent = t || ""; $("amsg").className = err ? "err" : ""; }
 async function api(path) {
   var r = await fetch(API + path), t = await r.text(), d;
-  try { d = JSON.parse(t); } catch (e) { throw new Error("The server is out of date. Replace server.js with the newest version and restart it (stop with Ctrl+C, then run node server.js)."); }
+  try { d = JSON.parse(t); } catch (e) { throw new Error("The server is out of date. Replace server.js with the newest version and restart it."); }
   if (d.error) throw new Error(d.error); return d;
 }
 function byId(id) { for (var i = 0; i < favs.length; i++) if (favs[i].id === id) return favs[i]; }
-function avatar(f, cls) { return f.avatar ? '<img class="av" src="' + esc(f.avatar) + '" alt="">' : '<div class="av">' + esc((f.name || "?").charAt(0)) + '</div>'; }
+function avatar(f) { return f.avatar ? '<img class="av" src="' + esc(f.avatar) + '" alt="">' : '<div class="av">' + esc((f.name || "?").charAt(0)) + '</div>'; }
+function fail(e) { return esc(e instanceof TypeError ? NOSERVER : e.message); }
+
+/* ---------- saving to the database ---------- */
+function dbErr(r) { if (r && r.error) msg("Couldn't save: " + r.error.message, true); return r; }
+function rowOf(f) { return { user_id: USER.id, channel_id: f.id, name: f.name, avatar: f.avatar || "", playlists: f.playlists || [] }; }
+function saveFav(f) { return sb.from("channels").upsert(rowOf(f), { onConflict: "user_id,channel_id" }).then(dbErr); }
+function delFav(id) { return sb.from("channels").delete().eq("channel_id", id).then(dbErr); }
+function markWatched(id, title, channel) {
+  WSET[id] = 1; WROWS.unshift({ video_id: id, title: title, channel: channel, watched_at: new Date().toISOString() });
+  sb.from("watched").insert({ user_id: USER.id, video_id: id, title: title, channel: channel }).then(dbErr);
+}
+
+/* ---------- views ---------- */
 function gridItems(videos) {
   return videos.map(function (v) {
-    return '<div class="card"><div class="thumb" data-v="' + v.id + '"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/hqdefault.jpg" alt=""><div class="play">▶</div></div>' +
+    return '<div class="card"><div class="thumb" data-v="' + v.id + '"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/hqdefault.jpg" alt=""><div class="play">▶</div>' + (WSET[v.id] ? '<div class="seen">✓ Watched</div>' : '') + '</div>' +
       '<div class="info"><p class="t">' + esc(v.title) + '</p><div class="m">' + (v.published ? ago(v.published) : "") + '</div></div></div>';
   }).join("");
 }
@@ -75,10 +111,9 @@ function plMore() {
   $("plgrid").insertAdjacentHTML("beforeend", gridItems(chunk));
   $("plmore").style.display = PLN < PLV.length ? "" : "none";
 }
-function fail(e) { return esc(e instanceof TypeError ? NOSERVER : e.message); }
 
-/* HOME: only channel picture + name */
 async function home() {
+  CURNAME = "";
   var v = $("view");
   if (!favs.length) { v.innerHTML = '<div class="end">Add a channel above to get started.</div>'; return; }
   function draw() {
@@ -91,16 +126,15 @@ async function home() {
   if (missing.length) {
     try {
       var d = await api("/api/channels?ids=" + missing.map(function (f) { return f.id; }).join(","));
-      d.channels.forEach(function (c) { var f = byId(c.id); if (f && c.avatar) f.avatar = c.avatar; });
-      save(); draw();
+      d.channels.forEach(function (c) { var f = byId(c.id); if (f && c.avatar) { f.avatar = c.avatar; saveFav(f); } });
+      draw();
     } catch (e) {}
   }
 }
 
-/* CHANNEL: tabs for Latest videos and Playlists */
 async function channel(id, tab) {
   var f = byId(id); if (!f) return home();
-  f.playlists = f.playlists || []; tab = tab || "latest";
+  f.playlists = f.playlists || []; tab = tab || "latest"; CURNAME = f.name;
   var v = $("view");
   v.innerHTML = '<button class="ghost" data-home="1">← All channels</button>' +
     '<div class="hd">' + avatar(f) + '<h1>' + esc(f.name) + '</h1></div>' +
@@ -125,7 +159,7 @@ async function channel(id, tab) {
     var q = $("plq").value.trim(); if (!q) return;
     try {
       var d = await api("/api/playlist?q=" + encodeURIComponent(q));
-      if (!f.playlists.some(function (x) { return x.id === d.id; })) { f.playlists.push({ id: d.id, title: d.title, thumb: (d.videos[0] || {}).id || "" }); save(); }
+      if (!f.playlists.some(function (x) { return x.id === d.id; })) { f.playlists.push({ id: d.id, title: d.title, thumb: (d.videos[0] || {}).id || "" }); saveFav(f); }
       openPlaylist(id, d.id);
     } catch (e) { $("plmsg").innerHTML = fail(e); }
   };
@@ -143,30 +177,82 @@ async function openPlaylist(cid, pid) {
   } catch (e) { v.innerHTML = back + '<div class="end">' + fail(e) + '</div>'; }
 }
 
+function history() {
+  CURNAME = "";
+  var seen = {}, list = [];
+  WROWS.forEach(function (r) { if (!seen[r.video_id]) { seen[r.video_id] = 1; list.push({ id: r.video_id, title: r.title || "Video", published: r.watched_at }); } });
+  $("view").innerHTML = '<button class="ghost" data-home="1">← All channels</button><h1 style="margin-top:14px">History</h1><div class="sub">Videos you opened here, most recent first.</div>' +
+    (list.length ? videoCards(list.slice(0, 60)) : '<div class="end">Nothing watched yet.</div>');
+}
+
 async function addChannel() {
   var q = $("q").value.trim(); if (!q) return;
   $("add").disabled = true; msg("Finding channel…");
   try {
     var d = await api("/api/add?q=" + encodeURIComponent(q));
-    if (byId(d.id)) msg(d.name + " is already added."); else { favs.push({ id: d.id, name: d.name, avatar: d.avatar || "", playlists: [] }); save(); msg("Added " + d.name + "."); }
+    if (byId(d.id)) msg(d.name + " is already added.");
+    else { var f = { id: d.id, name: d.name, avatar: d.avatar || "", playlists: [] }; favs.push(f); await saveFav(f); msg("Added " + d.name + "."); }
     $("q").value = ""; home();
   } catch (e) { msg(e instanceof TypeError ? NOSERVER : e.message, true); }
   $("add").disabled = false;
 }
 
+/* ---------- accounts ---------- */
+async function loadData() {
+  var c = await sb.from("channels").select("*").order("created_at");
+  var rows = c.data || [];
+  var local = []; try { local = JSON.parse(localStorage.getItem("calm_favs") || "[]"); } catch (e) {}
+  if (!rows.length && local.length) {   // first login: bring over the list saved in this browser
+    var ins = await sb.from("channels").insert(local.map(function (f) { return rowOf(f); })).select();
+    if (!ins.error) { rows = ins.data; try { localStorage.removeItem("calm_favs"); } catch (e) {} }
+  }
+  favs = rows.map(function (r) { return { id: r.channel_id, name: r.name, avatar: r.avatar, playlists: r.playlists || [] }; });
+  var w = await sb.from("watched").select("video_id,title,channel,watched_at").order("watched_at", { ascending: false }).limit(300);
+  WROWS = w.data || []; WSET = {}; WROWS.forEach(function (r) { WSET[r.video_id] = 1; });
+}
+async function boot() {
+  if (!sb) { $("auth").classList.remove("hide"); amsg("Couldn't load the sign-in service. Check your internet connection and refresh.", true); return; }
+  var s = (await sb.auth.getSession()).data.session;
+  if (!s) { USER = null; $("app").classList.add("hide"); $("auth").classList.remove("hide"); return; }
+  USER = s.user; $("who").textContent = USER.email;
+  $("auth").classList.add("hide"); $("app").classList.remove("hide");
+  $("view").innerHTML = '<div class="end">Loading your channels…</div>';
+  try { await loadData(); } catch (e) { msg("Couldn't load your data: " + e.message, true); }
+  home();
+}
+async function authGo(kind) {
+  var email = $("email").value.trim(), pass = $("pass").value;
+  if (!email || !pass) return amsg("Enter your email and password.", true);
+  amsg(kind === "in" ? "Signing in…" : "Creating account…");
+  var r = kind === "in" ? await sb.auth.signInWithPassword({ email: email, password: pass }) : await sb.auth.signUp({ email: email, password: pass });
+  if (r.error) return amsg(r.error.message, true);
+  if (!r.data.session) return amsg("Account created. Check your email to confirm it, then sign in.");
+  amsg(""); boot();
+}
+
+$("signin").onclick = function () { authGo("in"); };
+$("signup").onclick = function () { authGo("up"); };
+$("pass").onkeydown = function (e) { if (e.key === "Enter") authGo("in"); };
+$("out").onclick = async function () { await sb.auth.signOut(); favs = []; WROWS = []; WSET = {}; boot(); };
+$("hist").onclick = history;
 $("add").onclick = addChannel;
 $("q").onkeydown = function (e) { if (e.key === "Enter") addChannel(); };
 document.addEventListener("click", function (e) {
   var t = e.target, el;
-  if ((el = t.closest("[data-i]"))) { e.stopPropagation(); favs.splice(+el.getAttribute("data-i"), 1); save(); home(); return; }
+  if ((el = t.closest("[data-i]"))) { e.stopPropagation(); var f = favs.splice(+el.getAttribute("data-i"), 1)[0]; if (f) delFav(f.id); home(); return; }
   if ((el = t.closest("[data-tab]"))) { channel(el.getAttribute("data-id"), el.getAttribute("data-tab")); return; }
   if ((el = t.closest("[data-pl]"))) { openPlaylist(el.getAttribute("data-cid"), el.getAttribute("data-pl")); return; }
-  if ((el = t.closest(".thumb[data-v]"))) { el.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' + el.getAttribute("data-v") + '?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>'; return; }
+  if ((el = t.closest(".thumb[data-v]"))) {
+    var vid = el.getAttribute("data-v"), card = el.closest(".card"), tt = card && card.querySelector(".t");
+    el.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' + vid + '?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';
+    markWatched(vid, tt ? tt.textContent : "", CURNAME);
+    return;
+  }
   if ((el = t.closest("[data-ch]"))) { channel(el.getAttribute("data-ch"), el.getAttribute("data-back") || "latest"); return; }
   if ((el = t.closest("[data-more]"))) { plMore(); return; }
   if ((el = t.closest("[data-home]"))) { home(); }
 });
-home();
+boot();
 </script>
 </body>
 </html>
