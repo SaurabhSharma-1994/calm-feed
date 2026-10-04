@@ -2,74 +2,51 @@
 
 **One calm place for everything you actually want to follow.**
 
-Calm Feed is a distraction-free way to follow your favorite creators. You pick the channels and accounts you care about, and you see only their content. No recommendations, no endless scrolling, no rabbit holes.
+Pick the channels and accounts you care about and see only those. No recommendations, no endless scrolling, no rabbit holes. When you have seen everything, the feed ends.
 
-## Why this exists
+## Features
 
-Most of us open YouTube or Instagram to watch one thing and end up scrolling for an hour. The apps are built to keep us there. Calm Feed does the opposite: it gives you what you chose, then lets you leave.
+**Following**
+- YouTube channels (add by `@handle`, channel link, or even a video link), playlists, and Latest videos with "Load more".
+- Reddit subreddits, Bluesky accounts, and any blog or podcast (RSS) link.
+- Instagram and X accounts as link tiles (they do not share posts with other apps).
+- Folders to group channels, reorder channels, search your channels, a red dot with a number for new items since your last visit.
 
-The idea in one line: **your favorites, in one place, without the distraction.**
+**Watching**
+- Grid or list view, filter videos by title, video length badge, red progress bar, resume where you stopped.
+- Big player with an "Up next" list you can close; the next video plays automatically.
 
-## The vision
+**Focus**
+- Hide Shorts (60 seconds or less) and live streams.
+- Daily time limit (with an optional "add 10 minutes"), quiet hours, and a weekly summary.
 
-1. **Create your own profile.** Anyone can sign up and set up a personal space.
-2. **Add your favorite sources.** YouTube channels, Instagram accounts, X accounts, and other social media or blogs, all in one place.
-3. **See only what you chose.** A clean, chronological feed of the accounts you added. When you have seen everything, the feed ends and says so.
-4. **Share your favorites (later).** Public profiles let people see which creators you recommend.
+**Accounts**
+- Email sign-in, password reset, everything saved to your account across devices.
+- Optional public profile: share a link (`/?u=username`) so others can see and copy your channel list.
+- Light, dark or automatic theme; can be added to a phone or tablet home screen.
 
-### Principles
+**Plans**
+- Free plan: up to 15 channels (change `FREE_LIMIT` in `index.html`). Pro (unlimited, no ads) is a placeholder, with no payments yet.
+- Optional ad slot at the side of the page: set `ADSENSE_CLIENT` and `ADSENSE_SLOT` in `index.html`.
 
-- **No algorithmic recommendations.** You decide what appears.
-- **No infinite scroll.** The feed has an end.
-- **Calm design.** Minimal, quiet, easy on the eyes.
-- **Your list, your control.** Add or remove accounts any time.
+## Setup
 
-## What works today (MVP: YouTube only)
+1. **Supabase:** run `supabase-setup.sql` once in SQL Editor. In Authentication → URL Configuration, set Site URL to your website address (needed for password reset links).
+2. **Render:** add environment variable `YOUTUBE_API_KEY` (YouTube Data API v3 key). Keep it private.
+3. **GitHub:** upload `server.js`, `index.html`, `package.json` and `README.md`. Render redeploys automatically.
 
-- Add a channel by **handle** (for example `@mkbhd`) or by pasting a **channel link** (or even a video link).
-- **Home page** shows only your channels: profile picture and name.
-- Tap a channel to open it, with two tabs:
-  - **Latest videos:** the newest uploads as thumbnails, playable in the page.
-  - **Playlists:** playlist thumbnails to choose from, plus a box to paste a playlist link.
-- Accounts: your channel list and watch history are saved online.
+Run locally: `YOUTUBE_API_KEY=yourkey REQUIRE_AUTH=false node server.js`, then open `http://localhost:3000`. (`REQUIRE_AUTH=false` is for local testing only.)
 
-### Known limits
+## Files
 
-- Without an API key, playlists show the first ~100 videos (read from the playlist page). With a free YouTube API key set as `YOUTUBE_API_KEY` on the host, playlists show up to 500 videos reliably. Channel "Latest videos" shows the 15 newest.
-- The automatic playlist list reads YouTube's page layout, which can change. Pasting a playlist link always works as a fallback.
-- Sign in with email and password: your channels, playlists and watch history are saved to your account (Supabase) and follow you to any device. "Watched" means you opened the video here.
-- YouTube may block some hosting servers. If that happens, switching to YouTube's official API (with a free key) is the planned fix.
+- `server.js`: talks to YouTube's official API, Reddit, Bluesky and RSS; requires a signed-in user and limits each user to 120 requests a minute to protect your YouTube quota.
+- `index.html`: the app.
+- `package.json`: lets hosting start the app with `npm start`.
+- `supabase-setup.sql`: one-time database setup.
 
-## Roadmap
+## Known limits
 
-1. **Now:** YouTube channels and playlists (this MVP).
-2. **Next:** Official YouTube API for full playlists and stable results; accounts and sync across devices.
-3. **Then:** More platforms that offer public feeds (Reddit, Bluesky, Mastodon, blogs, podcasts).
-4. **Later:** Instagram and X through a browser extension that works inside the user's own session, with official embeds for display.
-5. **Focus tools:** Daily limits, scheduled check-in times, weekly summaries of what you watched.
-6. **Public profiles:** Share the creators you recommend.
-
-## Ideas for making money (kept in line with the calm promise)
-
-- **Free plan** with a limited number of accounts and light, static ads on the side of the page (no ads before or inside videos).
-- **Paid plan** with unlimited accounts, more platforms, focus tools and no ads.
-- **Optional extras:** custom profile pages, and team or school plans.
-
-## How to run it
-
-You need Node.js 18 or newer.
-
-```
-node server.js
-```
-
-Then open `http://localhost:3000`.
-
-Files:
-- `server.js`: the small server that finds channels and fetches their videos
-- `index.html`: the app screen
-- `package.json`: lets hosting services start the app with `npm start`
-
-## Status
-
-Early prototype. Built to test one question: *do people want a calmer way to follow their favorites?*
+- YouTube Shorts are detected by length (60 seconds or less).
+- Reddit often blocks requests from hosting servers; if adding a subreddit fails, that is why.
+- Daily time and the weekly minutes are counted per device. Watch history and progress sync across devices.
+- Payments are not built. Before charging for Pro, the plan setting must be moved somewhere users cannot edit.
