@@ -1,0 +1,8 @@
+{
+  "name": "calm-feed",
+  "version": "1.0.0",
+  "description": "Calm Feed MVP - favorite YouTube channels only",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}
