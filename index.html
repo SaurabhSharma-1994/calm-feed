@@ -50,7 +50,7 @@ var favs = [];
 try { favs = JSON.parse(localStorage.getItem("calm_favs") || "[]"); } catch (e) {}
 function save() { try { localStorage.setItem("calm_favs", JSON.stringify(favs)); } catch (e) {} }
 function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
-function ago(d) { var h = Math.floor((Date.now() - new Date(d)) / 36e5); if (h < 1) return "just now"; if (h < 24) return h + "h ago"; var n = Math.floor(h / 24); return n < 30 ? n + "d ago" : Math.floor(n / 30) + "mo ago"; }
+function ago(d) { if (!d) return ""; var h = Math.floor((Date.now() - new Date(d)) / 36e5); if (h < 1) return "just now"; if (h < 24) return h + "h ago"; var n = Math.floor(h / 24); return n < 30 ? n + "d ago" : Math.floor(n / 30) + "mo ago"; }
 function msg(t, err) { $("msg").textContent = t || ""; $("msg").className = err ? "err" : ""; }
 async function api(path) {
   var r = await fetch(API + path), t = await r.text(), d;
@@ -59,12 +59,21 @@ async function api(path) {
 }
 function byId(id) { for (var i = 0; i < favs.length; i++) if (favs[i].id === id) return favs[i]; }
 function avatar(f, cls) { return f.avatar ? '<img class="av" src="' + esc(f.avatar) + '" alt="">' : '<div class="av">' + esc((f.name || "?").charAt(0)) + '</div>'; }
+function gridItems(videos) {
+  return videos.map(function (v) {
+    return '<div class="card"><div class="thumb" data-v="' + v.id + '"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/hqdefault.jpg" alt=""><div class="play">▶</div></div>' +
+      '<div class="info"><p class="t">' + esc(v.title) + '</p><div class="m">' + (v.published ? ago(v.published) : "") + '</div></div></div>';
+  }).join("");
+}
 function videoCards(videos) {
   if (!videos.length) return '<div class="end">No videos found.</div>';
-  return '<div class="grid">' + videos.map(function (v) {
-    return '<div class="card"><div class="thumb" data-v="' + v.id + '"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/hqdefault.jpg" alt=""><div class="play">▶</div></div>' +
-      '<div class="info"><p class="t">' + esc(v.title) + '</p><div class="m">' + ago(v.published) + '</div></div></div>';
-  }).join("") + '</div>';
+  return '<div class="grid">' + gridItems(videos) + '</div>';
+}
+var PLV = [], PLN = 0;
+function plMore() {
+  var chunk = PLV.slice(PLN, PLN + 30); PLN += chunk.length;
+  $("plgrid").insertAdjacentHTML("beforeend", gridItems(chunk));
+  $("plmore").style.display = PLN < PLV.length ? "" : "none";
 }
 function fail(e) { return esc(e instanceof TypeError ? NOSERVER : e.message); }
 
@@ -127,7 +136,10 @@ async function openPlaylist(cid, pid) {
   v.innerHTML = back + '<div class="end">Loading playlist…</div>';
   try {
     var d = await api("/api/playlist?id=" + pid);
-    v.innerHTML = back + '<h1 style="margin-top:14px">' + esc(d.title) + '</h1>' + videoCards(d.videos) + '<div class="end">YouTube shares the 15 newest videos of a playlist here.</div>';
+    PLV = d.videos; PLN = 0;
+    var note = d.source === "rss" ? "Showing only the 15 newest videos. To see every video, add a YouTube API key on the server (see README)." : d.videos.length + " videos";
+    v.innerHTML = back + '<h1 style="margin-top:14px">' + esc(d.title) + '</h1><div class="sub">' + esc(note) + '</div><div class="grid" id="plgrid"></div><div class="end"><button class="ghost" id="plmore" data-more="1">Show more</button></div>';
+    plMore();
   } catch (e) { v.innerHTML = back + '<div class="end">' + fail(e) + '</div>'; }
 }
 
@@ -151,6 +163,7 @@ document.addEventListener("click", function (e) {
   if ((el = t.closest("[data-pl]"))) { openPlaylist(el.getAttribute("data-cid"), el.getAttribute("data-pl")); return; }
   if ((el = t.closest(".thumb[data-v]"))) { el.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' + el.getAttribute("data-v") + '?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>'; return; }
   if ((el = t.closest("[data-ch]"))) { channel(el.getAttribute("data-ch"), el.getAttribute("data-back") || "latest"); return; }
+  if ((el = t.closest("[data-more]"))) { plMore(); return; }
   if ((el = t.closest("[data-home]"))) { home(); }
 });
 home();

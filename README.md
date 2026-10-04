@@ -35,7 +35,7 @@ The idea in one line: **your favorites, in one place, without the distraction.**
 
 ### Known limits
 
-- YouTube's free feeds give only the **15 newest videos** per channel or playlist.
+- Without an API key, playlists show the first ~100 videos (read from the playlist page). With a free YouTube API key set as `YOUTUBE_API_KEY` on the host, playlists show up to 500 videos reliably. Channel "Latest videos" shows the 15 newest.
 - The automatic playlist list reads YouTube's page layout, which can change. Pasting a playlist link always works as a fallback.
 - Your list is saved per browser. It does not sync between devices yet.
 - YouTube may block some hosting servers. If that happens, switching to YouTube's official API (with a free key) is the planned fix.

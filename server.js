@@ -112,6 +112,56 @@ async function avatar(id) {
   return v;
 }
 
+// ---- Full playlists (more than 15 videos) ----
+const KEY = process.env.YOUTUBE_API_KEY || "";
+
+// Best: official YouTube Data API (set YOUTUBE_API_KEY on the host). Pages of 50, up to 500 videos.
+async function playlistApi(id) {
+  const j = async u => { const r = await fetch(u); const d = await r.json(); if (d.error) throw new Error(d.error.message || "YouTube API error"); return d; };
+  const base = "https://www.googleapis.com/youtube/v3/";
+  const meta = await j(base + "playlists?part=snippet&id=" + id + "&key=" + KEY);
+  const title = meta.items && meta.items[0] ? meta.items[0].snippet.title : "Playlist";
+  const videos = []; let tok = "";
+  do {
+    const d = await j(base + "playlistItems?part=snippet&maxResults=50&playlistId=" + id + "&key=" + KEY + (tok ? "&pageToken=" + tok : ""));
+    for (const it of d.items || []) {
+      const sn = it.snippet;
+      if (!sn.resourceId || sn.title === "Private video" || sn.title === "Deleted video") continue;
+      videos.push({ id: sn.resourceId.videoId, title: sn.title, published: sn.publishedAt,
+        channelId: sn.videoOwnerChannelId || "", channel: sn.videoOwnerChannelTitle || "" });
+    }
+    tok = d.nextPageToken || "";
+  } while (tok && videos.length < 500);
+  return { id, title, videos, source: "api" };
+}
+
+// Fallback with no key: reads the playlist page (usually the first ~100 videos). Can break if YouTube changes the page.
+async function playlistPage(id) {
+  const html = await get("https://www.youtube.com/playlist?list=" + id);
+  const title = dec(((html.match(/<title>([^<]*)<\/title>/) || [])[1] || "Playlist").replace(/ - YouTube$/, ""));
+  const seen = new Set(), videos = [];
+  for (const m of html.matchAll(/"playlistVideoRenderer":\{"videoId":"([\w-]{11})"/g)) {
+    if (seen.has(m[1])) continue;
+    seen.add(m[1]);
+    const t = html.slice(m.index, m.index + 1500).match(/"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/);
+    let ttl = t ? t[1] : "Video";
+    try { ttl = JSON.parse('"' + ttl + '"'); } catch (e) {}
+    videos.push({ id: m[1], title: ttl, published: "", channelId: "", channel: "" });
+  }
+  return { id, title, videos, source: "page" };
+}
+
+async function playlistAll(id) {
+  const k = "pa" + id, c = cache.get(k);
+  if (c && Date.now() - c.t < 10 * 60 * 1000) return c.v;
+  let v = null;
+  if (KEY) { try { v = await playlistApi(id); } catch (e) { v = null; } }
+  if (!v || !v.videos.length) { try { v = await playlistPage(id); } catch (e) { v = null; } }
+  if (!v || !v.videos.length) { v = await playlist(id); v = { ...v, source: "rss" }; }
+  cache.set(k, { t: Date.now(), v });
+  return v;
+}
+
 const json = (res, code, obj) => {
   res.writeHead(code, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
   res.end(JSON.stringify(obj));
@@ -140,7 +190,7 @@ http.createServer(async (req, res) => {
       return json(res, 200, { channels });
     }
     if (u.pathname === "/api/playlist") {
-      return json(res, 200, await playlist(playlistId(u.searchParams.get("q") || u.searchParams.get("id") || "")));
+      return json(res, 200, await playlistAll(playlistId(u.searchParams.get("q") || u.searchParams.get("id") || "")));
     }
     if (u.pathname === "/api/channel-playlists") {
       const cid = u.searchParams.get("id") || "";
