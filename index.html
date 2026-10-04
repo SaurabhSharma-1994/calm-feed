@@ -49,10 +49,13 @@ main.wide{max-width:1800px}
 .wt{font-size:18px;margin:12px 0 4px}
 .uph{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}.uph .sub{margin:0}.uph button,#upopen{padding:5px 10px;font-size:13px}
 #upopen{display:none;margin-top:6px}
-.watch.noup{grid-template-columns:minmax(0,1fr)}.watch.noup .wr{display:none}.watch.noup #upopen{display:inline-block}
+.watch.noup{grid-template-columns:minmax(0,1fr)}
+/* closed: a bit wider than the 3/4 size, but never taller than the screen, so no scrolling to see the whole video */
+.watch.noup>div:first-child{width:min(88%,calc((100vh - 170px) * 16 / 9));width:min(88%,calc((100dvh - 170px) * 16 / 9));min-width:min(100%,420px);margin:0 auto}.watch.noup .wr{display:none}.watch.noup #upopen{display:inline-block}
 .uplist{position:relative;max-height:80vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
 .up{display:flex;gap:10px;padding:6px;border-radius:10px;cursor:pointer;border:1px solid transparent}.up:hover{background:var(--card)}.up.cur{background:var(--card);border-color:var(--accent)}
 .up .ut{position:relative;flex:0 0 96px;aspect-ratio:16/9;border-radius:6px;overflow:hidden;background:#000}.up img{width:100%;height:100%;object-fit:cover;display:block}.up .t{font-size:12px;line-height:1.3;margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.up .m{font-size:11px}
+.dur{position:absolute;right:6px;bottom:9px;background:#000c;color:#fff;font-size:12px;line-height:1.3;padding:0 5px;border-radius:4px}.up .dur{font-size:10px;right:3px;bottom:7px;padding:0 3px}
 .pbar{position:absolute;left:0;right:0;bottom:0;height:4px;background:#ffffff66}.pbar i{display:block;height:100%;background:#f03}
 </style>
 </head>
@@ -117,7 +120,7 @@ function markWatched(id, title, channel) {
 /* ---------- views ---------- */
 function gridItems(videos) {
   return videos.map(function (v) {
-    return '<div class="card" data-w="' + v.id + '"><div class="thumb"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/hqdefault.jpg" alt=""><div class="play">▶</div>' + (WSET[v.id] ? '<div class="seen">✓ Watched</div>' : '') + pbar(v.id) + '</div>' +
+    return '<div class="card" data-w="' + v.id + '"><div class="thumb"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/hqdefault.jpg" alt=""><div class="play">▶</div>' + (WSET[v.id] ? '<div class="seen">✓ Watched</div>' : '') + dur(v) + pbar(v.id) + '</div>' +
       '<div class="info"><p class="t">' + esc(v.title) + '</p><div class="m">' + (v.published ? ago(v.published) : "") + '</div></div></div>';
   }).join("");
 }
@@ -228,6 +231,8 @@ async function addChannel() {
 var QUEUE = [], RET = null, CUR = -1, YTP = null, YTREADY = null, FALLBACK = false;
 var PROG = {}, tick = null, lastSave = 0, SW = false;
 function pct(id) { var p = PROG[id]; if (!p || !(p.d > 0) || !(p.s > 0)) return 0; var x = p.s / p.d * 100; return x > 95 ? 100 : Math.max(2, Math.round(x)); }
+function fmtDur(s) { s = Math.round(s); var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (x < 10 ? "0" : "") + x; }
+function dur(v) { var s = v.dur || (PROG[v.id] && PROG[v.id].d) || 0; return s > 0 ? '<div class="dur">' + fmtDur(s) + '</div>' : ""; }
 function pbar(id) { var x = pct(id); return x ? '<div class="pbar"><i style="width:' + x + '%"></i></div>' : ""; }
 function startAt(id) { var p = PROG[id]; return p && p.d > 0 && p.s / p.d < 0.95 ? Math.floor(p.s) : 0; }
 function saveProg(id) {
@@ -262,7 +267,7 @@ function paintQ() {
   var cur = QUEUE[CUR] || {};
   $("wt").textContent = cur.title || "";
   $("uplist").innerHTML = QUEUE.map(function (v, i) {
-    return '<div class="up' + (i === CUR ? " cur" : "") + '" data-q="' + i + '"><div class="ut"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg" alt="">' + pbar(v.id) + '</div><div><p class="t">' + esc(v.title) + '</p>' + (WSET[v.id] ? '<div class="m">✓ Watched</div>' : '') + '</div></div>';
+    return '<div class="up' + (i === CUR ? " cur" : "") + '" data-q="' + i + '"><div class="ut"><img loading="lazy" src="https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg" alt="">' + dur(v) + pbar(v.id) + '</div><div><p class="t">' + esc(v.title) + '</p>' + (WSET[v.id] ? '<div class="m">✓ Watched</div>' : '') + '</div></div>';
   }).join("");
   var c = $("uplist").querySelector(".cur"); if (c) $("uplist").scrollTop = Math.max(0, c.offsetTop - 8);
 }

@@ -146,7 +146,9 @@ async function playlistPage(id) {
     const t = html.slice(m.index, m.index + 1500).match(/"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/);
     let ttl = t ? t[1] : "Video";
     try { ttl = JSON.parse('"' + ttl + '"'); } catch (e) {}
-    videos.push({ id: m[1], title: ttl, published: "", channelId: "", channel: "" });
+    const L = html.slice(m.index, m.index + 2500).match(/"lengthSeconds":"(\d+)"/);
+    if (L) durCache.set(m[1], +L[1]);
+    videos.push({ id: m[1], title: ttl, published: "", channelId: "", channel: "", dur: L ? +L[1] : 0 });
   }
   return { id, title, videos, source: "page" };
 }
@@ -158,8 +160,31 @@ async function playlistAll(id) {
   if (KEY) { try { v = await playlistApi(id); } catch (e) { v = null; } }
   if (!v || !v.videos.length) { try { v = await playlistPage(id); } catch (e) { v = null; } }
   if (!v || !v.videos.length) { v = await playlist(id); v = { ...v, source: "rss" }; }
+  await addDurations(v.videos);
   cache.set(k, { t: Date.now(), v });
   return v;
+}
+
+// ---- Video lengths (seconds). Needs the API key; otherwise only playlists read from the page have them. ----
+const durCache = new Map();
+function isoSecs(s) {
+  const m = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(s || "");
+  return m ? (+m[1] || 0) * 86400 + (+m[2] || 0) * 3600 + (+m[3] || 0) * 60 + (+m[4] || 0) : 0;
+}
+async function addDurations(videos) {
+  const fill = () => videos.forEach(v => { if (durCache.has(v.id)) v.dur = durCache.get(v.id); });
+  fill();
+  if (!KEY) return videos;
+  const need = videos.filter(v => !durCache.has(v.id)).map(v => v.id);
+  for (let i = 0; i < need.length; i += 50) {
+    try {
+      const r = await fetch("https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=" + need.slice(i, i + 50).join(",") + "&key=" + KEY);
+      const d = await r.json();
+      for (const it of d.items || []) durCache.set(it.id, isoSecs(it.contentDetails.duration));
+    } catch (e) {}
+  }
+  fill();
+  return videos;
 }
 
 const json = (res, code, obj) => {
@@ -180,6 +205,7 @@ http.createServer(async (req, res) => {
       const out = await Promise.allSettled(ids.map(feed));
       const videos = out.flatMap(o => (o.status === "fulfilled" ? o.value.videos : []))
         .sort((a, b) => new Date(b.published) - new Date(a.published));
+      await addDurations(videos);
       return json(res, 200, { videos });
     }
     if (u.pathname === "/api/channels") {
